@@ -25,6 +25,7 @@ local Window = Rayfield:CreateWindow({
 local Tab = Window:CreateTab("Main", nil)
 local isTeleportingHouses = false
 local isHatchingEggs = false
+local isBlowingBubbles = false
 local standDelay = 5 -- Default stand delay for houses
 local eggCount = 1 -- Default egg count
 local teleportDelay = 0.1 -- Default teleport delay for eggs
@@ -85,6 +86,16 @@ local TeleportDelaySlider = Tab:CreateSlider({
     end
 })
 
+-- Toggle for bubble blowing
+local BubbleToggle = Tab:CreateToggle({
+    Name = "Auto Blow Bubble",
+    CurrentValue = false,
+    Flag = "BubbleToggle",
+    Callback = function(Value)
+        isBlowingBubbles = Value
+    end
+})
+
 -- Function to teleport to a position
 local function teleportToPosition(targetCFrame)
     rootPart.CFrame = targetCFrame
@@ -133,6 +144,16 @@ local function hatchEggs()
         hatchCount = 0 -- Reset counter after reaching egg count
         teleportToPosition(originalPosition) -- Teleport back
         wait(teleportDelay) -- Delay before next cycle
+    end
+end
+
+-- Function to handle bubble blowing
+local function blowBubbles()
+    local RemoteEvent = ReplicatedStorage.Shared.Framework.Network.Remote.RemoteEvent
+
+    while isBlowingBubbles do
+        RemoteEvent:FireServer("BlowBubble")
+        wait(0.1) -- Fire every 0.1 seconds
     end
 end
 
@@ -188,6 +209,16 @@ spawn(function()
     while true do
         if isHatchingEggs then
             hatchEggs()
+        end
+        wait(0.1) -- Small delay to prevent excessive CPU usage
+    end
+end)
+
+-- Separate loop for bubble blowing
+spawn(function()
+    while true do
+        if isBlowingBubbles then
+            blowBubbles()
         end
         wait(0.1) -- Small delay to prevent excessive CPU usage
     end
