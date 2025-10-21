@@ -1,0 +1,191 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
+
+-- Set walkspeed
+humanoid.WalkSpeed = 50
+
+-- Create Rayfield GUI
+local Window = Rayfield:CreateWindow({
+    Name = "sskint event shit",
+    LoadingTitle = "halloween auto farm",
+    LoadingSubtitle = "by sskint",
+    ConfigurationSaving = {
+        Enabled = false,
+        FolderName = nil,
+        FileName = "HalloweenTween"
+    }
+})
+
+local Tab = Window:CreateTab("Main", nil)
+local isTeleportingHouses = false
+local isHatchingEggs = false
+local standDelay = 5 -- Default stand delay for houses
+local eggCount = 1 -- Default egg count
+local teleportDelay = 0.1 -- Default teleport delay for eggs
+
+-- Toggle for house teleporting
+local HouseToggle = Tab:CreateToggle({
+    Name = "Teleport to Closest Active Houses",
+    CurrentValue = false,
+    Flag = "HouseToggle",
+    Callback = function(Value)
+        isTeleportingHouses = Value
+    end
+})
+
+-- Slider for house stand delay
+local StandSlider = Tab:CreateSlider({
+    Name = "Stand Delay (seconds)",
+    Range = {0.5, 5},
+    Increment = 0.1,
+    CurrentValue = 5,
+    Flag = "StandDelay",
+    Callback = function(Value)
+        standDelay = Value
+    end
+})
+
+-- Toggle for egg hatching
+local EggToggle = Tab:CreateToggle({
+    Name = "Auto Hatch Sinister Egg",
+    CurrentValue = false,
+    Flag = "EggToggle",
+    Callback = function(Value)
+        isHatchingEggs = Value
+    end
+})
+
+-- Slider for egg count
+local EggCountSlider = Tab:CreateSlider({
+    Name = "Eggs to Hatch",
+    Range = {1, 9},
+    Increment = 1,
+    CurrentValue = 1,
+    Flag = "EggCount",
+    Callback = function(Value)
+        eggCount = Value
+    end
+})
+
+-- Slider for teleport delay
+local TeleportDelaySlider = Tab:CreateSlider({
+    Name = "Teleport Delay (seconds)",
+    Range = {0.1, 2},
+    Increment = 0.1,
+    CurrentValue = 0.1,
+    Flag = "TeleportDelay",
+    Callback = function(Value)
+        teleportDelay = Value
+    end
+})
+
+-- Function to teleport to a position
+local function teleportToPosition(targetCFrame)
+    rootPart.CFrame = targetCFrame
+end
+
+-- Function to get distance to a target part
+local function getDistanceToTarget(targetPart)
+    if targetPart then
+        return (rootPart.Position - targetPart.Position).Magnitude
+    end
+    return math.huge
+end
+
+-- Function to stand and claim with teleporting up for houses
+local function standAndClaim(targetPart)
+    local baseCFrame = targetPart.CFrame * CFrame.new(0, 3, 0) -- Base position on platform
+    teleportToPosition(baseCFrame) -- Teleport to pad position
+    for i = 1, math.floor(standDelay) do -- Loop based on slider value
+        if not isTeleportingHouses then break end
+        local heightOffset = i -- Teleport up 1 unit per second
+        teleportToPosition(baseCFrame * CFrame.new(0, heightOffset, 0))
+        wait(1) -- Wait 1 second between teleports
+    end
+    if standDelay > math.floor(standDelay) then
+        wait(standDelay - math.floor(standDelay)) -- Handle remaining decimal time
+    end
+end
+
+-- Function to handle egg hatching
+local function hatchEggs()
+    local eggPath = workspace.Rendered.Generic["Sinister Egg"].Decoration["Meshes/Sinister Egg_Cube.018 (1)"]
+    local originalPosition = rootPart.CFrame
+    local RemoteEvent = ReplicatedStorage.Shared.Framework.Network.Remote.RemoteEvent
+    local hatchCount = 0
+
+    while isHatchingEggs do
+        teleportToPosition(eggPath.CFrame * CFrame.new(0, 3, 0)) -- Teleport to egg
+        while isHatchingEggs and hatchCount < eggCount do
+            RemoteEvent:FireServer("HatchEgg", "Sinister Egg", eggCount) -- Fire remote every 0.1 seconds with slider value
+            hatchCount = hatchCount + 1
+            wait(0.1) -- Fire every 0.1 seconds
+        end
+        hatchCount = 0 -- Reset counter after reaching egg count
+        teleportToPosition(originalPosition) -- Teleport back
+        wait(teleportDelay) -- Delay before next cycle
+    end
+end
+
+-- Main loop for houses
+spawn(function()
+    while true do
+        if not isTeleportingHouses then
+            wait(0.1)
+            continue
+        end
+
+        -- Get all houses
+        local houses = workspace.HalloweenEvent.Houses:GetChildren()
+
+        -- List to store valid houses with distances
+        local validHouses = {}
+        for _, house in ipairs(houses) do
+            if house:IsA("Model") or house:IsA("Part") then
+                local activation = house:FindFirstChild("Activation")
+                if activation and activation:IsA("Model") then
+                    local activeValue = activation:FindFirstChild("Active")
+                    if activeValue and activeValue:IsA("BoolValue") and activeValue.Value then
+                        local targetPart = activation:FindFirstChild("PrimaryPart") or activation:FindFirstChildWhichIsA("BasePart")
+                        if targetPart then
+                            table.insert(validHouses, {house = house, distance = getDistanceToTarget(targetPart)})
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Sort houses by distance
+        table.sort(validHouses, function(a, b) return a.distance < b.distance end)
+
+        -- Teleport to the closest houses one by one
+        for _, houseData in ipairs(validHouses) do
+            if not isTeleportingHouses then break end
+            local activation = houseData.house:FindFirstChild("Activation")
+            if activation and activation:IsA("Model") then
+                local targetPart = activation:FindFirstChild("PrimaryPart") or activation:FindFirstChildWhichIsA("BasePart")
+                if targetPart then
+                    standAndClaim(targetPart) -- Teleport and stand/claim
+                end
+            end
+        end
+
+        wait(0.1) -- Small delay before restarting loop
+    end
+end)
+
+-- Separate loop for egg hatching
+spawn(function()
+    while true do
+        if isHatchingEggs then
+            hatchEggs()
+        end
+        wait(0.1) -- Small delay to prevent excessive CPU usage
+    end
+end)
