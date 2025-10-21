@@ -101,7 +101,10 @@ end
 -- Function to stand and claim with teleporting up for houses
 local function standAndClaim(targetPart)
     local baseCFrame = targetPart.CFrame * CFrame.new(0, 3, 0) -- Base position on platform
-    teleportToPosition(baseCFrame) -- Teleport to pad position
+    local offsetCFrame = targetPart.CFrame * CFrame.new(5, 3, 0) -- Offset position near the activation
+    teleportToPosition(offsetCFrame) -- Teleport to offset position first
+    wait(0.1) -- Small delay to ensure registration
+    teleportToPosition(baseCFrame) -- Then teleport to pad position
     for i = 1, math.floor(standDelay) do -- Loop based on slider value
         if not isTeleportingHouses then break end
         local heightOffset = i -- Teleport up 1 unit per second
@@ -171,7 +174,7 @@ spawn(function()
             if activation and activation:IsA("Model") then
                 local targetPart = activation:FindFirstChild("PrimaryPart") or activation:FindFirstChildWhichIsA("BasePart")
                 if targetPart then
-                    standAndClaim(targetPart) -- Teleport and stand/claim
+                    standAndClaim(targetPart) -- Teleport to offset, then pad, and stand/claim
                 end
             end
         end
