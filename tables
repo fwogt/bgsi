@@ -1,0 +1,108 @@
+-- [[ PART 1: TABLES & CONFIGURATION ]] --
+
+-- Services (Global for access in other parts)
+getgenv().Services = {
+    HttpService = game:GetService("HttpService"),
+    Players = game:GetService("Players"),
+    ReplicatedStorage = game:GetService("ReplicatedStorage"),
+    Workspace = game:GetService("Workspace"),
+    Lighting = game:GetService("Lighting"),
+    RunService = game:GetService("RunService"),
+    TeleportService = game:GetService("TeleportService"),
+    CoreGui = game:GetService("CoreGui"),
+    VirtualUser = game:GetService("VirtualUser")
+}
+
+local LocalPlayer = Services.Players.LocalPlayer
+
+-- Remotes (Global)
+getgenv().Remotes = {
+    RemoteEvent = Services.ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Framework"):WaitForChild("Network"):WaitForChild("Remote"):WaitForChild("RemoteEvent"),
+    RemoteFunction = Services.ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Framework"):WaitForChild("Network"):WaitForChild("Remote"):WaitForChild("RemoteFunction"),
+    SpawnPickups = Services.ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Pickups"):WaitForChild("SpawnPickups"),
+    CollectPickup = Services.ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Pickups"):WaitForChild("CollectPickup"),
+    DiceRemoteEvent = Services.ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Framework"):WaitForChild("Network"):WaitForChild("Remote"):WaitForChild("RemoteEvent"),
+    DiceRemoteFunction = Services.ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Framework"):WaitForChild("Network"):WaitForChild("Remote"):WaitForChild("RemoteFunction")
+}
+
+-- Configuration Constants
+getgenv().Config = {
+    WebhookURL = "https://discord.com/api/webhooks/1464966201758322836/5hObKjf8fh4b4V1bblXI0t2eH9vYWmpdSU7T9uqDsg-duSisSC-ylCmOFduttjJx-7-6",
+    DiscordInvite = "https://discord.gg/nTVgVPxPr7",
+    StatsFile = "demonhub_stats.json",
+    PosFile = "demonhub_pos.json"
+}
+
+-- Global Flags
+getgenv().SeasonPassBusy = false
+getgenv().AutoFarmSeason = false
+getgenv().AutoClaimSeason = false
+getgenv().TriggerDiscordPrompt = false
+getgenv().SeasonTaskLabel = nil -- Placeholder for UI
+
+-- [[ DATA TABLES ]] --
+
+-- Season Egg Locations
+getgenv().SeasonEggLocations = {
+    ["Void"]      = Vector3.new(-146.732, 10.123, -25.832),
+    ["Magma"]     = Vector3.new(-135.083, 10.181, 0.558),
+    ["Lava"]      = Vector3.new(-71.995, 13.069, 15.804),
+    ["Cyber"]     = Vector3.new(-95.034, 10.074, -62.885),
+    ["Common"]    = Vector3.new(-83.808, 10.074, 0.084),
+    ["Nightmare"] = Vector3.new(-142.153, 10.074, -45.661),
+    ["Mining"]    = Vector3.new(-119.929, 10.074, -63.483),
+    ["Icy"]       = Vector3.new(-58.163, 13.070, -1.740),
+    ["Lunar"]     = Vector3.new(-144.928, 10.074, -16.165),
+    ["Spotted"]   = Vector3.new(-93.356, 10.253, 9.487),
+    ["Classic"]   = Vector3.new(-90.801, 13.070, 25.956),
+    ["Neon"]      = Vector3.new(-82.393, 10.138, -56.996),
+    ["Spikey"]    = Vector3.new(-125.895, 10.074, 4.731),
+    ["Showman"]   = Vector3.new(-129.870, 10.074, -59.938),
+    ["Iceshard"]  = Vector3.new(-118.437, 10.074, 8.215),
+    ["Rainbow"]   = Vector3.new(-136.555, 10.073, -53.733),
+    ["Crystal"]   = Vector3.new(-141.347, 10.139, -7.007),
+    ["Hell"]      = Vector3.new(-144.718, 10.074, -35.174),
+    ["Atlantis"]  = Vector3.new(-80.420, 13.070, 22.220),
+    ["Vine"]      = Vector3.new(-65.549, 13.070, 7.318)
+}
+
+-- Codes List
+getgenv().CodesList = {
+    "release","lucky","easter","update2","update3","sylentlyssorry","update4","update5","update6","update7",
+    "update8","update9","update10","update11","update12","update13","update15","world3","onemorebonus",
+    "fishe","fishfix","update16","season6","season7","bugfix","plasma","milestones","retroslop","obby",
+    "autumn","superpuff","cornmaze","halloween","maidnert","ripsoulofplant","adminabuse","miniupdate",
+    "shutdown","ogbgs","throwback","sorryshutdown", "elf", "2xinfinity", "circus"
+}
+
+-- Inventory Eggs List
+getgenv().InventoryEggs = {
+    "Season 1 Egg", "Season 2 Egg", "Season 3 Egg", "Season 4 Egg", "Season 5 Egg", 
+    "Season 6 Egg", "Season 7 Egg", "Season 8 Egg", "Season 9 Egg", "Season OG Egg", 
+    "Season XMAS Egg", "Series 1 Egg", "Series 2 Egg", "Pirate Egg", "Frost Egg", 
+    "Stellaris Egg", "Prismatic Egg"
+}
+
+-- Rift Map
+getgenv().RiftNameMap = {
+    ["yuletide-egg"] = "YuleTide Egg",
+    ["gingerbread-egg"] = "GingerBread Egg",
+    ["candycane-egg"] = "CandyCane Egg",
+    ["aurora-egg"] = "aurora egg",
+    ["northepole-egg"] = "Notherpole Egg",
+    ["festive-egg"] = "Festive Egg"
+}
+
+-- Minigame Settings (Global for Loops)
+getgenv()._G_toggles = { finish = false, skip = false, start = false, fastroll = false }
+getgenv()._G_intervals = { finish = 2, skip = 3, start = 1 }
+getgenv()._G_selected = { machine = "Robot Claw", difficulty = "Insane" }
+
+-- Webhook Queue System
+getgenv().WebhookData = {
+    Queue = {},
+    Enabled = false,
+    Url = ""
+}
+
+print("Part 1 (Tables) Loaded")
