@@ -1,0 +1,741 @@
+-- [[ PART 3: UI & LOOPS ]] --
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local LocalPlayer = getgenv().Services.Players.LocalPlayer
+local VirtualInputManager = game:GetService("VirtualInputManager") -- Added for virtual clicks
+
+local Window = Rayfield:CreateWindow({
+    Name = "demonhub",
+    LoadingTitle = "demonhub",
+    LoadingSubtitle = "sskint",
+    ConfigurationSaving = { Enabled = true, FolderName = "demonhub", FileName = "demonhub_config" }
+})
+
+if getgenv().TriggerDiscordPrompt then
+    Rayfield:Notify({ Title = "Join our Discord!", Content = "Opening Discord... (Link also copied)", Duration = 6.5, Image = 4483362458 })
+end
+
+-- [[ TAB: SEASON PASS ]] --
+-- [[ SEASON PASS TAB & LOGIC ]] --
+local SeasonTab = Window:CreateTab("Season Pass", 4483362458)
+getgenv().SeasonTaskLabel = SeasonTab:CreateLabel("Status: Idle") 
+
+-- Helper function to return to the UNIFIED position (same as Rejoin)
+local function returnToGlobalPosition()
+    if isfile(getgenv().Config.PosFile) then
+        local content = readfile(getgenv().Config.PosFile)
+        local success, decoded = pcall(function() return getgenv().Services.HttpService:JSONDecode(content) end)
+        if success and decoded and decoded.cf then
+            local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            local root = char:WaitForChild("HumanoidRootPart", 10)
+            if root then 
+                task.wait(0.5)
+                root.CFrame = CFrame.new(unpack(decoded.cf))
+                getgenv().SeasonTaskLabel:Set("Status: Returned to Farm")
+            end
+        end
+    else
+        getgenv().SeasonTaskLabel:Set("Status: No Save Pos Found")
+    end
+end
+
+-- Main Processing Logic
+local function processSeasonChallengeFolder(folderPathName)
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return false end
+    
+    local challengesPath = playerGui:FindFirstChild("ScreenGui") and playerGui.ScreenGui.Season:FindFirstChild("Frame") and playerGui.ScreenGui.Season.Frame.Content:FindFirstChild("Challenges")
+    if not challengesPath then return false end
+
+    local categoryFolder = challengesPath:FindFirstChild(folderPathName)
+    if not categoryFolder then return false end
+    local listFolder = categoryFolder:FindFirstChild("List") or categoryFolder
+    local children = listFolder:GetChildren()
+    table.sort(children, function(a, b) return a.Name < b.Name end)
+    
+    local activeTaskFound = false
+    for _, challengeFrame in ipairs(children) do
+        if not getgenv().AutoFarmSeason then break end
+        if challengeFrame:IsA("Frame") and (challengeFrame:FindFirstChild("Content")) then
+            local content = challengeFrame.Content
+            local taskLabel = content:FindFirstChild("Label")
+            local barLabel = content:FindFirstChild("Bar") and content.Bar:FindFirstChild("Label")
+
+            if taskLabel and barLabel and not getgenv().isSeasonTaskComplete(barLabel) then
+                activeTaskFound = true
+                getgenv().SeasonPassBusy = true
+                
+                local taskText = taskLabel.Text
+                local taskTextLower = taskText:lower()
+
+                -- LOOP UNTIL SPECIFIC TASK IS DONE
+                while not getgenv().isSeasonTaskComplete(barLabel) and getgenv().AutoFarmSeason do
+                    local currentProgress = getgenv().getSeasonProgressText(barLabel)
+                    getgenv().SeasonTaskLabel:Set(folderPathName .. ": " .. taskText .. " [" .. currentProgress .. "]")
+
+                    -- LOGIC: BLOW BUBBLES
+                    if string.find(taskTextLower, "blow") then
+                        -- Check for sell TP if needed, otherwise just blow
+                        getgenv().Remotes.RemoteEvent:FireServer("BlowBubble")
+                        task.wait(0.2)
+                        
+                    -- LOGIC: COLLECT COINS (Uses Chest/Hatch strategy)
+                    elseif string.find(taskTextLower, "collect") and string.find(taskTextLower, "coins") then
+                        getgenv().seasonTeleportTo(Vector3.new(-136.555, 10.073, -53.733))
+                        getgenv().Remotes.RemoteEvent:FireServer("HatchEgg", "Rainbow Egg", 100)
+                        task.wait(0.2)
+                        
+                    -- LOGIC: HATCH EGGS
+                    elseif string.find(taskTextLower, "hatch") then
+                        local eggName, eggPos = getgenv().getSeasonEggTaskInfo(taskText)
+                        if eggName and eggPos then
+                            getgenv().seasonTeleportTo(eggPos)
+                            getgenv().Remotes.RemoteEvent:FireServer("HatchEgg", eggName .. " Egg", 100)
+                            task.wait(0.2)
+                        end
+                    else
+                        task.wait(1)
+                    end
+                end
+                
+                -- TASK FINISHED: TP BACK TO THE UNIFIED POSITION
+                getgenv().SeasonTaskLabel:Set("Status: Task Done! Returning...")
+                returnToGlobalPosition()
+                
+                getgenv().SeasonPassBusy = false
+                return true 
+            end
+        end
+    end
+    return activeTaskFound
+end
+
+-- UI Toggle
+SeasonTab:CreateToggle({
+    Name = "Auto Farm Season Pass",
+    CurrentValue = false,
+    Flag = "SeasonToggle",
+    Callback = function(v)
+        getgenv().AutoFarmSeason = v
+        if v then
+            -- Fixed Anti-AFK Activation
+            getgenv().EnableAntiAFK() 
+            
+            task.spawn(function()
+                while getgenv().AutoFarmSeason do
+                    local found = processSeasonChallengeFolder("Daily")
+                    if not found then
+                        found = processSeasonChallengeFolder("Weekly")
+                    end
+                    
+                    if not found then
+                        getgenv().SeasonTaskLabel:Set("Status: All Tasks Complete")
+                    end
+                    task.wait(10)
+                end
+            end)
+        end
+    end,
+})
+
+SeasonTab:CreateToggle({
+    Name = "Enable Auto Farm", CurrentValue = false, Flag = "AutoFarmSeasonToggle",
+    Callback = function(Value)
+        getgenv().AutoFarmSeason = Value
+        if Value then
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                SeasonOriginalPosition = LocalPlayer.Character.HumanoidRootPart.CFrame
+            end
+            getgenv().SeasonPassBusy = false
+        else
+            getgenv().SeasonTaskLabel:Set("Status: Paused")
+            getgenv().SeasonPassBusy = false
+        end
+    end,
+})
+
+SeasonTab:CreateToggle({
+    Name = "Auto Claim Season Rewards", CurrentValue = false, Flag = "AutoClaimSeasonToggle",
+    Callback = function(Value)
+        getgenv().AutoClaimSeason = Value
+        if Value then task.spawn(function()
+            while getgenv().AutoClaimSeason do getgenv().Remotes.RemoteEvent:FireServer("ClaimSeason"); task.wait(1) end
+        end) end
+    end,
+})
+
+-- Main Season Loop
+task.spawn(function()
+    while true do
+        if getgenv().AutoFarmSeason then
+            local doneWork = false
+            if processSeasonChallengeFolder("Hourly") then doneWork = true end
+            if not doneWork and getgenv().AutoFarmSeason then if processSeasonChallengeFolder("Daily") then doneWork = true end end
+            
+            if doneWork then task.wait(0.5) else
+                if getgenv().SeasonPassBusy then
+                    if SeasonOriginalPosition and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                         LocalPlayer.Character.HumanoidRootPart.CFrame = SeasonOriginalPosition
+                    end
+                    getgenv().SeasonTaskLabel:Set("Tasks Complete. Resuming regular farm.")
+                    getgenv().SeasonPassBusy = false
+                else
+                    getgenv().SeasonTaskLabel:Set("All Tasks finished waiting for more")
+                end
+                task.wait(3)
+            end
+        else
+            getgenv().SeasonPassBusy = false
+            task.wait(1)
+        end
+    end
+end)
+
+-- [[ TAB: UNLOCKS ]] --
+local UnlocksTab = Window:CreateTab("Unlocks")
+
+UnlocksTab:CreateButton({ Name = "Unlock Overworld", Callback = function()
+    local world = workspace.Worlds:FindFirstChild("The Overworld")
+    if world then for _,island in ipairs(world.Islands:GetChildren()) do if island:FindFirstChild("Island") then getgenv().fireTouchTenTimes(island.Island) end end end
+end})
+
+UnlocksTab:CreateButton({ Name = "Unlock Minigame Paradise", Callback = function()
+    local world = workspace.Worlds:FindFirstChild("Minigame Paradise")
+    if world then for _,island in ipairs(world.Islands:GetChildren()) do getgenv().fireTouchTenTimes(island) end end
+end})
+
+local autoRedeemEnabled = false
+UnlocksTab:CreateToggle({ Name = "Auto Redeem All Codes", CurrentValue = false, Flag = "AutoRedeemToggle",
+    Callback = function(v)
+        autoRedeemEnabled = v
+        if v then task.spawn(function()
+            for _, code in ipairs(getgenv().CodesList) do
+                if not autoRedeemEnabled then break end
+                pcall(function() getgenv().Remotes.RemoteFunction:InvokeServer("RedeemCode", code) end)
+                task.wait(1.1)
+            end
+        end) end
+    end
+})
+
+local autoPlaytimeEnabled = false
+UnlocksTab:CreateToggle({ Name = "Auto Claim Playtime Rewards", CurrentValue = false, Flag = "PlaytimeToggle",
+    Callback = function(v)
+        autoPlaytimeEnabled = v
+        if v then task.spawn(function()
+            while autoPlaytimeEnabled do pcall(function() getgenv().Remotes.RemoteEvent:FireServer("ClaimAllPlaytime") end); task.wait(1) end
+        end) end
+    end
+})
+
+-- [[ TAB: AUTOMATION ]] --
+local AutoTab = Window:CreateTab("Automation")
+local autoBubbleEnabled = false
+AutoTab:CreateToggle({ Name = "Auto Bubble", CurrentValue = false, Flag = "BubbleToggle",
+    Callback = function(v)
+        autoBubbleEnabled = v
+        if v then task.spawn(function()
+            while autoBubbleEnabled do
+                if getgenv().SeasonPassBusy then task.wait(2) continue end
+                getgenv().Remotes.RemoteEvent:FireServer("BlowBubble"); task.wait(0.1)
+            end
+        end) end
+    end
+})
+
+-- Egg Logic
+local eggList = {}
+local eggNamesSet = {}
+local function updateEggList()
+    eggList = {}; eggNamesSet = {}
+    local eggsFolder = getgenv().Services.ReplicatedStorage:FindFirstChild("Assets") and getgenv().Services.ReplicatedStorage.Assets:FindFirstChild("Eggs")
+    if not eggsFolder then return end
+    for _, child in ipairs(eggsFolder:GetChildren()) do
+        if child:IsA("Model") and not string.find(string.lower(child.Name), "golden") then table.insert(eggList, child.Name) end
+    end
+    table.sort(eggList)
+    for _, eggName in ipairs(eggList) do eggNamesSet[eggName] = true end
+end
+updateEggList()
+if #eggList == 0 then table.insert(eggList, "No Eggs Found") end
+
+local normalHatchAmount = 100
+local selectedHatchEggs = {}
+local autoHatchEnabled = false
+AutoTab:CreateDropdown({ Name = "Select Eggs to Auto Hatch", Options = eggList, CurrentOption = {}, MultipleOptions = true, Flag = "NormalEggDropdown_V2",
+    Callback = function(selected) selectedHatchEggs = selected end
+})
+
+AutoTab:CreateToggle({ Name = "Auto Hatch selected Eggs", CurrentValue = false, Flag = "NormalHatchToggle",
+    Callback = function(v)
+        autoHatchEnabled = v
+        if v then task.spawn(function()
+            while autoHatchEnabled do
+                if getgenv().SeasonPassBusy then task.wait(2) continue end
+                for _, egg in ipairs(selectedHatchEggs) do
+                    if not autoHatchEnabled or getgenv().SeasonPassBusy then break end
+                    if egg ~= "No Eggs Found" then getgenv().Remotes.RemoteEvent:FireServer("HatchEgg", egg, normalHatchAmount); task.wait(0.1) end
+                end
+                task.wait(0.05)
+            end
+        end) end
+    end
+})
+
+-- Closest Hatch (WITH SLIDER FIX)
+local autoHatchClosestEnabled = false
+local closestEggDistance = 30
+local currentClosestEgg = nil
+local eggCache = {}
+local function refreshEggCache()
+    eggCache = {}
+    for _, obj in ipairs(getgenv().Services.Workspace:GetDescendants()) do
+        if eggNamesSet[obj.Name] then
+            local part = obj:IsA("BasePart") and obj or (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart"))
+            if part then table.insert(eggCache, { name = obj.Name, position = part.Position }) end
+        end
+    end
+end
+
+AutoTab:CreateToggle({ Name = "Auto Hatch Closest Egg", CurrentValue = false, Flag = "ClosestHatchToggle",
+    Callback = function(v)
+        autoHatchClosestEnabled = v
+        if v then
+            refreshEggCache()
+            task.spawn(function()
+                local scanTimer = 0
+                while autoHatchClosestEnabled do
+                    if getgenv().SeasonPassBusy then task.wait(2) continue end
+                    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    if not root then task.wait(0.5) continue end
+                    local closestName, closestDist = nil, math.huge
+                    for _, egg in ipairs(eggCache) do
+                        local dist = (root.Position - egg.position).Magnitude
+                        if dist < closestDist and dist <= closestEggDistance then closestDist = dist; closestName = egg.name end
+                    end
+                    if closestName and closestName ~= currentClosestEgg then currentClosestEgg = closestName end
+                    if currentClosestEgg then getgenv().Remotes.RemoteEvent:FireServer("HatchEgg", currentClosestEgg, normalHatchAmount) end
+                    scanTimer = scanTimer + 0.05
+                    if scanTimer >= 1 then refreshEggCache(); scanTimer = 0 end
+                    task.wait(0.05)
+                end
+            end)
+        end
+    end
+})
+
+-- FIXED PROXIMITY SLIDER
+local ProximityLabel = AutoTab:CreateLabel("Proximity Distance: " .. closestEggDistance)
+AutoTab:CreateSlider({ Name = "Adjust Distance", Range = {10, 100}, Increment = 5, CurrentValue = closestEggDistance, Flag = "ProximitySlider", 
+    Callback = function(v) 
+        closestEggDistance = v 
+        ProximityLabel:Set("Proximity Distance: " .. v)
+    end 
+})
+
+local autoPickupsEnabled = false
+local pickupQueue = {}
+local pickupConnection = nil
+AutoTab:CreateToggle({ Name = "Auto Pickups", CurrentValue = false, Flag = "PickupsToggle",
+    Callback = function(v)
+        autoPickupsEnabled = v
+        if v then
+            task.spawn(function()
+                while autoPickupsEnabled do
+                    if getgenv().SeasonPassBusy then task.wait(2)
+                    elseif #pickupQueue > 0 then
+                        for _, id in ipairs(pickupQueue) do getgenv().Remotes.CollectPickup:FireServer(id) end
+                        pickupQueue = {}
+                    end
+                    task.wait(0.5)
+                end
+            end)
+            pickupConnection = getgenv().Remotes.SpawnPickups.OnClientEvent:Connect(function(d)
+                if not autoPickupsEnabled or not d then return end
+                for _, p in ipairs(d) do
+                    local id = p.Id or p.id
+                    if id and type(id) == "string" and #id == 36 then table.insert(pickupQueue, id) end
+                end
+            end)
+        elseif pickupConnection then pickupConnection:Disconnect() end
+    end
+})
+
+-- [[ TAB: INVENTORY ]] --
+local InventoryTab = Window:CreateTab("Inventory")
+InventoryTab:CreateSection("Mystery Boxes")
+local powerupsFolder = getgenv().Services.ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Powerups")
+local boxNames = {}
+for _, item in pairs(powerupsFolder:GetChildren()) do table.insert(boxNames, item.Name) end
+local selectedBox = boxNames[1] or "Mystery Box"
+local autoOpenBoxEnabled = false
+
+InventoryTab:CreateDropdown({ Name = "Select Box to Open", Options = boxNames, CurrentOption = {selectedBox}, MultipleOptions = false, Flag = "BoxDropdown",
+    Callback = function(Option) selectedBox = (type(Option) == "table" and Option[1]) or Option end
+})
+
+-- VIRTUAL CLICKER ADDED HERE
+InventoryTab:CreateToggle({ Name = "Spam Open Box (Auto Clicker)", CurrentValue = false, Flag = "AutoOpenBoxToggle", 
+    Callback = function(Value)
+        autoOpenBoxEnabled = Value
+        if Value then task.spawn(function()
+            while autoOpenBoxEnabled do
+                if not getgenv().SeasonPassBusy then 
+                    -- 1. Remote Use
+                    pcall(function() getgenv().Remotes.RemoteEvent:FireServer("UseGift", selectedBox, 25) end)
+                    
+                    -- 2. Virtual Click (Keeps connection active/Anti-AFK/Menu Alive)
+                    -- Clicks at (100, 100) to avoid UI buttons
+                    VirtualInputManager:SendMouseButtonEvent(100, 100, 0, true, game, 1)
+                    task.wait(0.05)
+                    VirtualInputManager:SendMouseButtonEvent(100, 100, 0, false, game, 1)
+                end
+                task.wait(0.5)
+            end
+        end) end
+    end
+})
+
+InventoryTab:CreateSection("Inventory Eggs")
+local selectedInventoryEggs = {}
+local autoInventoryHatchEnabled = false
+local fixedInventoryHatchAmount = 12 
+InventoryTab:CreateDropdown({ Name = "Select Inventory Eggs", Options = getgenv().InventoryEggs, CurrentOption = {}, MultipleOptions = true, Flag = "InvEggDropdown_V2", 
+    Callback = function(selected) selectedInventoryEggs = selected end
+})
+InventoryTab:CreateToggle({ Name = "Auto Fast Hatch Inventory Eggs", CurrentValue = false, Flag = "InvHatchToggle",
+    Callback = function(v)
+        autoInventoryHatchEnabled = v
+        if v then task.spawn(function()
+            while autoInventoryHatchEnabled do
+                if getgenv().SeasonPassBusy then task.wait(2) continue end
+                for _, eggName in ipairs(selectedInventoryEggs) do
+                    if not autoInventoryHatchEnabled or getgenv().SeasonPassBusy then break end
+                    getgenv().Remotes.RemoteEvent:FireServer("HatchPowerupEgg", eggName, fixedInventoryHatchAmount); task.wait(0.1)
+                end
+                task.wait(0.05)
+            end
+        end) end
+    end
+})
+
+-- [[ TAB: RIFTS ]] --
+local RiftTab = Window:CreateTab("Rifts")
+local originalPosition, returnedToOriginal, autoTPEnabled, returnToPositionEnabled, luckThreshold, teleportDistanceThreshold = nil, false, false, true, 0, 5
+local selectedRiftTypes = {}
+local CurrentTargetLabel = RiftTab:CreateLabel("Current Target: None")
+
+RiftTab:CreateDropdown({ Name = "Select Rift Types to Prioritize", Options = {"YuleTide Egg", "GingerBread Egg", "CandyCane Egg" , "aurora egg", "Notherpole Egg", "Festive Egg"}, CurrentOption = {}, MultipleOptions = true, Flag = "RiftDropdown_V2", 
+    Callback = function(selected)
+        selectedRiftTypes = {}
+        for _, riftName in ipairs(selected) do
+            for id, name in pairs(getgenv().RiftNameMap) do if name == riftName then selectedRiftTypes[id] = true end end
+        end
+    end
+})
+
+-- FIXED LUCK SLIDER
+local LuckLabel = RiftTab:CreateLabel("Luck Threshold: " .. luckThreshold .. "x")
+RiftTab:CreateSlider({ Name = "Adjust Threshold", Range = {0, 10000}, Increment = 50, Suffix = "x", CurrentValue = 0, Flag = "LuckSlider", 
+    Callback = function(value) 
+        luckThreshold = value 
+        LuckLabel:Set("Luck Threshold: " .. value .. "x")
+    end 
+})
+
+RiftTab:CreateToggle({ Name = "Return to Original Position", CurrentValue = true, Flag = "ReturnToggle", Callback = function(v) returnToPositionEnabled = v end })
+
+local function returnToOriginalPosition()
+    if not returnToPositionEnabled then return end
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if root and originalPosition then root.CFrame = originalPosition end
+end
+
+local function removeRiftFromMemory(id) getgenv().RiftMemory[id] = nil end
+local function refreshRifts()
+    local folder = getgenv().Services.Workspace:FindFirstChild("Rendered") and getgenv().Services.Workspace.Rendered:FindFirstChild("Rifts")
+    local seen = {}
+    if folder then
+        for _, rift in ipairs(folder:GetChildren()) do
+            if rift:IsA("Model") then
+                local id = rift:GetAttribute("_riftID") or getgenv().generateRiftID(rift)
+                seen[id] = true
+                if not getgenv().RiftMemory[id] then getgenv().RiftMemory[id] = rift end
+            end
+        end
+    else
+        if autoTPEnabled and not returnedToOriginal then returnToOriginalPosition(); returnedToOriginal = true end
+    end
+
+    for id, rift in pairs(getgenv().RiftMemory) do if not seen[id] or not (rift and rift.Parent) then removeRiftFromMemory(id) end end
+
+    local bestRift, bestLuck = nil, -math.huge
+    for id, rift in pairs(getgenv().RiftMemory) do
+        if rift and rift.Parent then
+            local internalName, luck = rift.Name, getgenv().getLuckFromRift(rift)
+            local allowed = true
+            if next(selectedRiftTypes) then allowed = selectedRiftTypes[internalName] == true end
+            if allowed and luck >= luckThreshold and luck > bestLuck then bestLuck = luck; bestRift = rift end
+        end
+    end
+
+    if not autoTPEnabled then CurrentTargetLabel:Set("Current Target: (Auto TP Disabled)"); return end
+    if getgenv().SeasonPassBusy then return end
+
+    if not bestRift then
+        if not returnedToOriginal then returnToOriginalPosition(); returnedToOriginal = true end
+        CurrentTargetLabel:Set("Current Target: None")
+        return
+    end
+
+    if returnedToOriginal then returnedToOriginal = false end
+    local name = getgenv().RiftNameMap[bestRift.Name] or bestRift.Name
+    CurrentTargetLabel:Set(("Target: %s (%.1fx)"):format(name, bestLuck))
+
+    if getgenv().teleportToRift(bestRift) == false then end -- Teleport attempted
+end
+
+RiftTab:CreateToggle({ Name = "Auto TP to Filtered Rifts", CurrentValue = false, Flag = "RiftTPToggle",
+    Callback = function(v)
+        autoTPEnabled = v
+        if v then
+            local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if root then originalPosition = root.CFrame; returnedToOriginal = false end
+        elseif returnToPositionEnabled then returnToOriginalPosition(); returnedToOriginal = false end
+    end
+})
+task.spawn(function() while true do pcall(refreshRifts); task.wait(0.1) end end)
+
+-- [[ TAB: MINIGAMES ]] --
+local MiniTab = Window:CreateTab("Minigames")
+local loops = { finish = nil, skip = nil, start = nil, fastroll = nil }
+local function safeFire(args) pcall(function() getgenv().Remotes.DiceRemoteEvent:FireServer(unpack(args)) end) end
+
+local function finishLoop()
+    while task.wait(getgenv()._G_intervals.finish) do 
+        if not getgenv()._G_toggles.finish then break end
+        if getgenv().SeasonPassBusy then continue end
+        getgenv().Remotes.DiceRemoteEvent:FireServer("FinishMinigame") 
+    end
+end
+local function skipLoop()
+    while task.wait(getgenv()._G_intervals.skip) do 
+        if not getgenv()._G_toggles.skip then break end
+        if getgenv().SeasonPassBusy then continue end
+        safeFire({"SkipMinigameCooldown", getgenv()._G_selected.machine}) 
+    end
+end
+local function startLoop()
+    while task.wait(getgenv()._G_intervals.start) do 
+        if not getgenv()._G_toggles.start then break end
+        if getgenv().SeasonPassBusy then continue end
+        safeFire({"StartMinigame", getgenv()._G_selected.machine, getgenv()._G_selected.difficulty}) 
+    end
+end
+local function fastRollLoop()
+    local L,D=0,0.05
+    while task.wait(D) do
+        if not getgenv()._G_toggles.fastroll then break end
+        if getgenv().SeasonPassBusy then continue end
+        if tick()-L<D then continue end
+        L=tick()
+        pcall(function() getgenv().Remotes.DiceRemoteEvent:FireServer("ClaimTile"); getgenv().Remotes.DiceRemoteFunction:InvokeServer() end)
+    end
+end
+
+MiniTab:CreateDropdown({ Name = "Select Machine", Options = {"Robot Claw", "Pet Match", "Cart Escape", "Circus Pet Match", "Dance Off" , "Neon Darts"}, CurrentOption = {getgenv()._G_selected.machine}, MultipleOptions = false, Flag = "MiniMachine_V3",
+    Callback = function(opt) getgenv()._G_selected.machine = (type(opt) == "table" and opt[1]) or opt end
+})
+MiniTab:CreateDropdown({ Name = "Select Difficulty", Options = {"Easy", "Medium", "Hard", "Insane"}, CurrentOption = {getgenv()._G_selected.difficulty}, MultipleOptions = false, Flag = "MiniDiff_V3",
+    Callback = function(opt) getgenv()._G_selected.difficulty = (type(opt) == "table" and opt[1]) or opt end
+})
+
+-- TOGGLE: Finish
+MiniTab:CreateToggle({ Name = "Spam Finish Minigame", CurrentValue = false, Flag = "MiniFinish", 
+    Callback = function(s) getgenv()._G_toggles.finish = s; if s then loops.finish = task.spawn(finishLoop) elseif loops.finish then task.cancel(loops.finish); loops.finish = nil end end
+})
+
+-- FIXED SLIDER: Finish
+local FinishLabel = MiniTab:CreateLabel("Finish Delay: " .. getgenv()._G_intervals.finish .. "s")
+MiniTab:CreateSlider({ Name = "Adjust Finish Delay", Range = {0.1, 3}, Increment = 0.1, Suffix = "s", CurrentValue = getgenv()._G_intervals.finish, Flag = "MiniFinishD", 
+    Callback = function(v) 
+        getgenv()._G_intervals.finish = v
+        if getgenv()._G_toggles.finish and loops.finish then task.cancel(loops.finish); loops.finish = task.spawn(finishLoop) end
+        FinishLabel:Set("Finish Delay: " .. v .. "s")
+    end
+})
+
+-- TOGGLE: Skip
+MiniTab:CreateToggle({ Name = "Auto Skip Cooldown", CurrentValue = false, Flag = "MiniSkip", 
+    Callback = function(s) getgenv()._G_toggles.skip = s; if s then loops.skip = task.spawn(skipLoop) elseif loops.skip then task.cancel(loops.skip); loops.skip = nil end end
+})
+
+-- FIXED SLIDER: Skip
+local SkipLabel = MiniTab:CreateLabel("Skip Delay: " .. getgenv()._G_intervals.skip .. "s")
+MiniTab:CreateSlider({ Name = "Adjust Skip Delay", Range = {0.1, 3}, Increment = 0.1, Suffix = "s", CurrentValue = getgenv()._G_intervals.skip, Flag = "MiniSkipD", 
+    Callback = function(v) 
+        getgenv()._G_intervals.skip = v
+        if getgenv()._G_toggles.skip and loops.skip then task.cancel(loops.skip); loops.skip = task.spawn(skipLoop) end
+        SkipLabel:Set("Skip Delay: " .. v .. "s")
+    end
+})
+
+-- TOGGLE: Start
+MiniTab:CreateToggle({ Name = "Auto Start Minigame", CurrentValue = false, Flag = "MiniStart", 
+    Callback = function(s) getgenv()._G_toggles.start = s; if s then loops.start = task.spawn(startLoop) elseif loops.start then task.cancel(loops.start); loops.start = nil end end
+})
+
+-- FIXED SLIDER: Start
+local StartLabel = MiniTab:CreateLabel("Start Delay: " .. getgenv()._G_intervals.start .. "s")
+MiniTab:CreateSlider({ Name = "Adjust Start Delay", Range = {0.1, 3}, Increment = 0.1, Suffix = "s", CurrentValue = getgenv()._G_intervals.start, Flag = "MiniStartD", 
+    Callback = function(v) 
+        getgenv()._G_intervals.start = v
+        if getgenv()._G_toggles.start and loops.start then task.cancel(loops.start); loops.start = task.spawn(startLoop) end
+        StartLabel:Set("Start Delay: " .. v .. "s")
+    end
+})
+
+MiniTab:CreateToggle({ Name = "Fast Roll Dices", CurrentValue = false, Flag = "MiniFast", 
+    Callback = function(s) getgenv()._G_toggles.fastroll = s; if s then loops.fastroll = task.spawn(fastRollLoop) elseif loops.fastroll then task.cancel(loops.fastroll); loops.fastroll = nil end end
+})
+
+-- [[ TAB: WEBHOOK ]] --
+local WebhookTab = Window:CreateTab("Webhook")
+local lastSent = 0
+local function fixUrl(u) return u:gsub("%s",""):gsub("^https?://discordapp%.com/", "https://discord.com/") end
+WebhookTab:CreateInput({ Name = "Discord Webhook URL", PlaceholderText = "https://discord.com/...", Flag="WebhookInput", Callback = function(t) getgenv().WebhookData.Url = fixUrl(t) end })
+WebhookTab:CreateButton({ Name = "Save Webhook URL", Callback = function() getgenv().WebhookData.Url = fixUrl(getgenv().WebhookData.Url) end })
+WebhookTab:CreateButton({ Name = "Test Webhook", Callback = function() if not getgenv().WebhookData.Url:match("^https://discord%.com/") then return end table.insert(getgenv().WebhookData.Queue, {type="text", content="Test from demonhub!"}) end })
+WebhookTab:CreateToggle({ Name = "Enable Hatch Webhook", CurrentValue = false, Flag="WebhookToggle", Callback = function(v) getgenv().WebhookData.Enabled = v end })
+
+local function SendMessage(url, msg) pcall(function() Request({ Url = url, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = getgenv().Services.HttpService:JSONEncode({content = msg}) }) end) end
+local function SendEmbed(url, embed) pcall(function() Request({ Url = url, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = getgenv().Services.HttpService:JSONEncode({embeds = {embed}}) }) end) end
+task.spawn(function()
+    while true do
+        if #getgenv().WebhookData.Queue > 0 and tick() - lastSent >= 1 then
+            local item = table.remove(getgenv().WebhookData.Queue, 1)
+            if item.type == "text" then SendMessage(getgenv().WebhookData.Url, item.content)
+            elseif item.type == "embed" then SendEmbed(getgenv().WebhookData.Url, item.embed) end
+            lastSent = tick()
+        end
+        task.wait(1)
+    end
+end)
+
+local function sendCurrentInventory()
+    if not getgenv().WebhookData.Enabled then return end
+    local embed = { title = "demonhub – Inventory Scan", description = ("**%s** – Total eggs: **%s**"):format(LocalPlayer.Name, tostring(getgenv().readTotalHatches())), color = 0x00ff00 }
+    table.insert(getgenv().WebhookData.Queue, {type="embed", embed=embed})
+end
+task.spawn(sendCurrentInventory)
+
+local totalEggsOpened = getgenv().readTotalHatches()
+local lastTotalHatches = totalEggsOpened
+getgenv().Remotes.RemoteEvent.OnClientEvent:Connect(function(action, data)
+    if action ~= "HatchEgg" or not getgenv().WebhookData.Enabled then return end
+    local hatchedPets = {}
+    if typeof(data) == "table" then
+        for _, pd in ipairs(data.Pets or {}) do
+            if not pd.Deleted then
+                local p = pd.Pet
+                table.insert(hatchedPets, { name = p.Name or "Unknown", shiny = p.Shiny == true, mythic = p.Mythic == true, og = p.OG == true })
+            end
+        end
+    end
+    if #hatchedPets == 0 then return end
+    local newTotal = getgenv().readTotalHatches()
+    local eggsThisHatch = newTotal - lastTotalHatches
+    lastTotalHatches = newTotal
+    totalEggsOpened = totalEggsOpened + eggsThisHatch 
+    for _, pet in ipairs(hatchedPets) do
+        local existCount = getgenv().getExistCount(pet.name, pet.shiny, pet.mythic, pet.og)
+        local typeStr, prefix = "Normal", ""
+        if pet.shiny and pet.mythic then typeStr = "Shiny Mythic" elseif pet.shiny then typeStr = "Shiny" elseif pet.mythic then typeStr = "Mythic" end
+        if pet.shiny then prefix = prefix .. "Shiny " end; if pet.mythic then prefix = prefix .. "Mythic " end; if pet.og then prefix = prefix .. "OG " end
+        local embed = {
+            title = "Pet Hatched!", color = 0xFF69B4, thumbnail = {url = getgenv().petImageUrl(pet.name, pet.shiny, pet.mythic, pet.og)},
+            fields = {
+                { name = "‎", value = ("**%s** just hatched a %s**%s**!"):format(LocalPlayer.Name, prefix, pet.name), inline = false },
+                { name = "Exist Count", value = tostring(existCount), inline = true },
+                { name = "Total Eggs",  value = tostring(totalEggsOpened), inline = true },
+                { name = "Type", value = typeStr, inline = true },
+                { name = "Elapsed Eggs", value = ("**%d** egg%s"):format(totalEggsOpened, totalEggsOpened==1 and "" or "s"), inline = false },
+            },
+            footer = {text = ("Hatched on %s"):format(os.date("%m/%d/%Y at %H:%M:%S"))}
+        }
+        table.insert(getgenv().WebhookData.Queue, {type="embed", embed=embed})
+    end
+end)
+
+-- [[ TAB: PERFORMANCE ]] --
+local PerfTab = Window:CreateTab("Performance")
+local BlackOverlay = Instance.new("ScreenGui"); BlackOverlay.Name = "NoRenderBlackOverlay"; BlackOverlay.ResetOnSpawn = false; BlackOverlay.DisplayOrder = 1; BlackOverlay.Parent = getgenv().Services.CoreGui
+local BlackFrame = Instance.new("Frame"); BlackFrame.Size = UDim2.fromScale(1, 1); BlackFrame.BackgroundColor3 = Color3.new(0, 0, 0); BlackFrame.BorderSizePixel = 0; BlackFrame.Visible = false; BlackFrame.Parent = BlackOverlay
+
+task.spawn(function()
+    task.wait(1.5)
+    local rayGui = getgenv().Services.CoreGui:FindFirstChild("Rayfield")
+    if rayGui then rayGui.DisplayOrder = 9999; for _, v in rayGui:GetDescendants() do if v:IsA("GuiObject") then v.ZIndex = 999 end end end
+end)
+
+local noRenderEnabled, useBlackBorder = false, true
+PerfTab:CreateToggle({ Name = "No Render Mode", CurrentValue = false, Flag = "NoRenderToggle",
+    Callback = function(state)
+        noRenderEnabled = state
+        if state then pcall(function() getgenv().Services.RunService:Set3dRenderingEnabled(false) end); if useBlackBorder then BlackFrame.Visible = true end
+        else pcall(function() getgenv().Services.RunService:Set3dRenderingEnabled(true) end); BlackFrame.Visible = false end
+    end
+})
+PerfTab:CreateToggle({ Name = "Black Screen Overlay", CurrentValue = true, Flag = "BlackBorderToggle", Callback = function(state) useBlackBorder = state; if noRenderEnabled then BlackFrame.Visible = state end end })
+PerfTab:CreateButton({ Name = "Set Low Quality", Callback = function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end })
+PerfTab:CreateToggle({ Name = "Disable Shadows", CurrentValue = false, Flag = "ShadowsToggle", Callback = function(v) getgenv().Services.Lighting.GlobalShadows = not v end })
+PerfTab:CreateButton({ Name = "Disable Textures & Decals", Callback = function() for _, v in ipairs(workspace:GetDescendants()) do if v:IsA("BasePart") then v.Material = Enum.Material.SmoothPlastic; v.Reflectance = 0 elseif v:IsA("Decal") or v:IsA("Texture") then v:Destroy() end end end })
+PerfTab:CreateButton({ Name = "Delete Un-needed Assets", Callback = function() getgenv().deleteAssets(eggNamesSet) end })
+
+-- [[ TAB: SETTINGS ]] --
+local SettingsTab = Window:CreateTab("Settings")
+local autoRejoinEnabled, autoPositionSaveEnabled = false, false
+SettingsTab:CreateSection("Connection")
+SettingsTab:CreateToggle({ Name = "Auto Rejoin on Kick/Disconnect", CurrentValue = false, Flag = "AutoRejoinToggle",
+    Callback = function(v)
+        autoRejoinEnabled = v
+        if v then task.spawn(function()
+            local prompt = getgenv().Services.CoreGui:WaitForChild("RobloxPromptGui"):WaitForChild("promptOverlay")
+            while autoRejoinEnabled do if prompt:FindFirstChild("ErrorPrompt") then getgenv().Services.TeleportService:Teleport(game.PlaceId) end; task.wait(2) end
+        end) end
+    end
+})
+
+SettingsTab:CreateSection("Position Persistence")
+task.spawn(function()
+    if isfile(getgenv().Config.PosFile) then
+        local content = readfile(getgenv().Config.PosFile)
+        local success, decoded = pcall(function() return getgenv().Services.HttpService:JSONDecode(content) end)
+        if success and decoded and decoded.cf then
+            if not LocalPlayer.Character then LocalPlayer.CharacterAdded:Wait() end
+            local root = LocalPlayer.Character:WaitForChild("HumanoidRootPart", 10)
+            if root then task.wait(1); root.CFrame = CFrame.new(unpack(decoded.cf)); Rayfield:Notify({ Title = "Position Loaded", Content = "Teleported to last saved location.", Duration = 4 }) end
+        end
+    end
+end)
+
+SettingsTab:CreateToggle({ Name = "Auto Save Position (Every 15s)", CurrentValue = false, Flag = "AutoSavePosToggle",
+    Callback = function(v)
+        autoPositionSaveEnabled = v
+        if v then task.spawn(function()
+            while autoPositionSaveEnabled do
+                task.wait(15)
+                local char = LocalPlayer.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                if root then
+                    local cfComponents = {root.CFrame:GetComponents()}
+                    writefile(getgenv().Config.PosFile, getgenv().Services.HttpService:JSONEncode({cf = cfComponents}))
+                end
+            end
+        end) end
+    end
+})
+
+Rayfield:LoadConfiguration()
+Rayfield:Notify({ Title = "demonhub LOADED", Content = "demonware", Duration = 6 })
+print("demonhub loaded")
