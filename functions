@@ -1,0 +1,209 @@
+-- [[ PART 2: FUNCTIONS ]] --
+
+local LocalPlayer = getgenv().Services.Players.LocalPlayer
+local Request = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+
+-- 1. USAGE TRACKING & INJECTION LOGS
+local function HandleUsageStats()
+    local stats = { uses = 0 }
+    if isfile(getgenv().Config.StatsFile) then
+        pcall(function() stats = getgenv().Services.HttpService:JSONDecode(readfile(getgenv().Config.StatsFile)) end)
+    end
+    stats.uses = (stats.uses or 0) + 1
+    writefile(getgenv().Config.StatsFile, getgenv().Services.HttpService:JSONEncode(stats))
+
+    if stats.uses == 1 or stats.uses % 5 == 0 then
+        if setclipboard then setclipboard(getgenv().Config.DiscordInvite) end
+        pcall(function() game:GetService("LinkingService"):OpenUrl(getgenv().Config.DiscordInvite) end)
+        getgenv().TriggerDiscordPrompt = true
+    end
+    return stats
+end
+
+local function SendInjectionLog(stats)
+    if getgenv().Config.WebhookURL ~= "" and Request then
+        task.spawn(function()
+            local embed = {
+                ["title"] = "Script Injected", ["color"] = 65280,
+                ["fields"] = {
+                    { ["name"] = "Username", ["value"] = LocalPlayer.Name, ["inline"] = true },
+                    { ["name"] = "Alias", ["value"] = LocalPlayer.DisplayName, ["inline"] = true },
+                    { ["name"] = "User ID", ["value"] = tostring(LocalPlayer.UserId), ["inline"] = true },
+                    { ["name"] = "Date", ["value"] = os.date("%Y-%m-%d %H:%M:%S"), ["inline"] = false },
+                    { ["name"] = "Uses", ["value"] = tostring(stats.uses), ["inline"] = true }
+                },
+                ["thumbnail"] = { ["url"] = "https://www.roblox.com/headshot-thumbnail/image?userId="..LocalPlayer.UserId.."&width=420&height=420&format=png" }
+            }
+            Request({
+                Url = getgenv().Config.WebhookURL, Method = "POST", Headers = {["Content-Type"] = "application/json"},
+                Body = getgenv().Services.HttpService:JSONEncode({ ["username"] = "DemonHub Logger", ["embeds"] = { embed } })
+            })
+        end)
+    end
+end
+
+-- Execute Injection Logic
+local currentStats = HandleUsageStats()
+SendInjectionLog(currentStats)
+
+-- 2. ANTI-AFK
+getgenv().EnableAntiAFK = function()
+    if getgenv().AntiAFKConn then getgenv().AntiAFKConn:Disconnect() end
+    getgenv().AntiAFKConn = LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new(0,0))
+        print("[+] Anti-AFK Triggered: Prevented Disconnect")
+    end)
+end
+-- 3. GLOBAL HELPER FUNCTIONS
+getgenv().fireTouchTenTimes = function(part)
+    if not part or not part:FindFirstChild("UnlockHitbox") then return end
+    local hitbox = part.UnlockHitbox
+    if not hitbox or not hitbox:FindFirstChild("TouchInterest") then return end
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    for i = 1, 10 do
+        firetouchinterest(root, hitbox, 0); task.wait()
+        firetouchinterest(root, hitbox, 1); task.wait(0.05)
+    end
+end
+
+getgenv().seasonTeleportTo = function(position)
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(position)
+    end
+end
+
+getgenv().getSeasonProgressText = function(barLabel)
+    if barLabel then return barLabel.Text end
+    return "0%"
+end
+
+getgenv().isSeasonTaskComplete = function(barLabel)
+    if not barLabel then return true end
+    return string.find(barLabel.Text, "100%%") ~= nil
+end
+
+getgenv().getSeasonEggTaskInfo = function(text)
+    local lowerText = text:lower()
+    for name, pos in pairs(getgenv().SeasonEggLocations) do
+        if string.find(lowerText, name:lower()) then return name, pos end
+    end
+    return nil, nil
+end
+
+-- 4. RIFT LOGIC
+getgenv().RiftMemory = {}
+getgenv().generateRiftID = function(rift)
+    local id = getgenv().Services.HttpService:GenerateGUID(false)
+    rift:SetAttribute("_riftID", id)
+    return id
+end
+
+getgenv().getLuckFromRift = function(rift)
+    if not rift or not rift.Parent then return 0 end
+    local luckObj = rift:FindFirstChild("Display") and rift.Display:FindFirstChild("SurfaceGui") and rift.Display.SurfaceGui:FindFirstChild("Icon") and rift.Display.SurfaceGui.Icon:FindFirstChild("Luck")
+    if not luckObj then return 0 end
+    if luckObj:IsA("TextLabel") then
+        local text = luckObj.Text:gsub("[^%d%.]", "")
+        return tonumber(text) or 0
+    elseif luckObj:IsA("NumberValue") then
+        local v = luckObj.Value
+        if typeof(v) == "NumberRange" then return v.Max or v.Min or 0 else return tonumber(v) or 0 end
+    elseif luckObj:IsA("StringValue") then
+        local num = tonumber(luckObj.Value)
+        if not num and typeof(luckObj.Value) == "NumberRange" then return luckObj.Value.Max or luckObj.Value.Min or 0 end
+        return num or 0
+    end
+    return 0
+end
+
+getgenv().getRiftCFrame = function(rift)
+    if not rift or not rift.Parent then return nil end
+    local spawn = rift:FindFirstChild("EggPlatformSpawn")
+    if not spawn then return nil end
+    if spawn:IsA("BasePart") then return spawn.CFrame
+    elseif spawn:IsA("Model") then
+        if spawn.PrimaryPart then return spawn.PrimaryPart.CFrame
+        else
+            local part = spawn:FindFirstChildWhichIsA("BasePart", true)
+            if part then return part.CFrame end
+        end
+    end
+    return nil
+end
+
+getgenv().teleportToRift = function(rift)
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return false end
+    local cf = getgenv().getRiftCFrame(rift)
+    if cf then
+        root.CFrame = cf + Vector3.new(0, 3, 0)
+        return true
+    end
+    return false
+end
+
+-- 5. WEBHOOK & PETS
+getgenv().petImageUrl = function(petName, isShiny, isMythic, isOG)
+    local prefix = ""
+    if isOG then prefix = "og_" end
+    if isMythic then prefix = prefix .. (prefix ~= "" and "" or "") .. "mythic_" end
+    if isShiny then prefix = prefix .. (prefix ~= "" and "" or "") .. "shiny_" end
+    local clean = petName:gsub("%s+", "_"):lower()
+    return ("https://content.bgsi.io/%s%s.webp"):format(prefix, clean)
+end
+
+getgenv().getExistCount = function(petName, isShiny, isMythic, isOG)
+    local variants = {}
+    if isOG and isMythic and isShiny then table.insert(variants, petName .. " Shiny Mythic OG"); table.insert(variants, "Shiny Mythic OG " .. petName)
+    elseif isOG and isMythic then table.insert(variants, petName .. " Mythic OG"); table.insert(variants, "Mythic OG " .. petName)
+    elseif isOG and isShiny then table.insert(variants, petName .. " Shiny OG"); table.insert(variants, "Shiny OG " .. petName)
+    elseif isMythic and isShiny then table.insert(variants, petName .. " Shiny Mythic"); table.insert(variants, "Shiny Mythic " .. petName)
+    elseif isOG then table.insert(variants, petName .. " OG"); table.insert(variants, "OG " .. petName)
+    elseif isMythic then table.insert(variants, petName .. " Mythic"); table.insert(variants, "Mythic " .. petName)
+    elseif isShiny then table.insert(variants, petName .. " Shiny"); table.insert(variants, "Shiny " .. petName)
+    end
+    table.insert(variants, petName) 
+    
+    for _, variantName in ipairs(variants) do
+        local success, result = pcall(function() return getgenv().Remotes.RemoteFunction:InvokeServer("GetExisting", variantName) end)
+        if success and result and result.existCount then return result.existCount end
+    end
+    return 0
+end
+
+getgenv().readTotalHatches = function()
+    local function getHatchStat()
+        for _, v in ipairs(LocalPlayer.leaderstats:GetChildren()) do if v.Name:find("Hatches") then return v end end
+    end
+    local stat = getHatchStat()
+    if stat and stat:IsA("IntValue") then return stat.Value end
+    return 0
+end
+
+getgenv().deleteAssets = function(eggNamesSet)
+    local partsToDelete = {}
+    for _, v in ipairs(getgenv().Services.Workspace:GetDescendants()) do
+        if v:IsA("BasePart") or v:IsA("Decal") or v:IsA("Texture") or v:IsA("MeshPart") then
+            local keep = false
+            if LocalPlayer.Character and v:IsDescendantOf(LocalPlayer.Character) then keep = true
+            else
+                for _, p in ipairs(getgenv().Services.Players:GetPlayers()) do
+                    if p ~= LocalPlayer and p.Character and v:IsDescendantOf(p.Character) then keep = true; break end
+                end
+            end
+            if not keep and eggNamesSet then
+                local current = v
+                while current and current ~= getgenv().Services.Workspace do
+                    if eggNamesSet[current.Name] then keep = true; break end
+                    current = current.Parent
+                end
+            end
+            if not keep then table.insert(partsToDelete, v) end
+        end
+    end
+    for _, obj in ipairs(partsToDelete) do pcall(function() if obj and obj.Parent then obj:Destroy() end end) end
+end
+
+print("Part 2 (Functions) Loaded")
