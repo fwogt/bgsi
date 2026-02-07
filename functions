@@ -46,15 +46,14 @@ end
 local currentStats = HandleUsageStats()
 SendInjectionLog(currentStats)
 
--- 2. ANTI-AFK
-getgenv().EnableAntiAFK = function()
-    if getgenv().AntiAFKConn then getgenv().AntiAFKConn:Disconnect() end
-    getgenv().AntiAFKConn = LocalPlayer.Idled:Connect(function()
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new(0,0))
-        print("[+] Anti-AFK Triggered: Prevented Disconnect")
+-- 2. ANTI-AFK (FIXED)
+if LocalPlayer then
+    LocalPlayer.Idled:Connect(function()
+        getgenv().Services.VirtualUser:CaptureController()
+        getgenv().Services.VirtualUser:ClickButton2(Vector2.new())
     end)
 end
+
 -- 3. GLOBAL HELPER FUNCTIONS
 getgenv().fireTouchTenTimes = function(part)
     if not part or not part:FindFirstChild("UnlockHitbox") then return end
@@ -137,10 +136,7 @@ getgenv().teleportToRift = function(rift)
     local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not root then return false end
     local cf = getgenv().getRiftCFrame(rift)
-    if cf then
-        root.CFrame = cf + Vector3.new(0, 3, 0)
-        return true
-    end
+    if cf then root.CFrame = cf + Vector3.new(0, 3, 0) return true end
     return false
 end
 
@@ -156,54 +152,22 @@ end
 
 getgenv().getExistCount = function(petName, isShiny, isMythic, isOG)
     local variants = {}
-    if isOG and isMythic and isShiny then table.insert(variants, petName .. " Shiny Mythic OG"); table.insert(variants, "Shiny Mythic OG " .. petName)
-    elseif isOG and isMythic then table.insert(variants, petName .. " Mythic OG"); table.insert(variants, "Mythic OG " .. petName)
-    elseif isOG and isShiny then table.insert(variants, petName .. " Shiny OG"); table.insert(variants, "Shiny OG " .. petName)
-    elseif isMythic and isShiny then table.insert(variants, petName .. " Shiny Mythic"); table.insert(variants, "Shiny Mythic " .. petName)
-    elseif isOG then table.insert(variants, petName .. " OG"); table.insert(variants, "OG " .. petName)
-    elseif isMythic then table.insert(variants, petName .. " Mythic"); table.insert(variants, "Mythic " .. petName)
-    elseif isShiny then table.insert(variants, petName .. " Shiny"); table.insert(variants, "Shiny " .. petName)
+    if isOG and isMythic and isShiny then
+        table.insert(variants, petName .. " Shiny Mythic OG"); table.insert(variants, "Shiny Mythic OG " .. petName)
+    elseif isOG and isMythic then
+        table.insert(variants, petName .. " Mythic OG"); table.insert(variants, "Mythic OG " .. petName)
+    elseif isOG and isShiny then
+        table.insert(variants, petName .. " Shiny OG"); table.insert(variants, "Shiny OG " .. petName)
+    elseif isOG then
+        table.insert(variants, petName .. " OG"); table.insert(variants, "OG " .. petName)
+    elseif isMythic and isShiny then
+        table.insert(variants, petName .. " Shiny Mythic"); table.insert(variants, "Shiny Mythic " .. petName)
+    elseif isMythic then
+        table.insert(variants, petName .. " Mythic"); table.insert(variants, "Mythic " .. petName)
+    elseif isShiny then
+        table.insert(variants, petName .. " Shiny"); table.insert(variants, "Shiny " .. petName)
+    else
+        table.insert(variants, petName)
     end
-    table.insert(variants, petName) 
-    
-    for _, variantName in ipairs(variants) do
-        local success, result = pcall(function() return getgenv().Remotes.RemoteFunction:InvokeServer("GetExisting", variantName) end)
-        if success and result and result.existCount then return result.existCount end
-    end
-    return 0
+    return "Unknown"
 end
-
-getgenv().readTotalHatches = function()
-    local function getHatchStat()
-        for _, v in ipairs(LocalPlayer.leaderstats:GetChildren()) do if v.Name:find("Hatches") then return v end end
-    end
-    local stat = getHatchStat()
-    if stat and stat:IsA("IntValue") then return stat.Value end
-    return 0
-end
-
-getgenv().deleteAssets = function(eggNamesSet)
-    local partsToDelete = {}
-    for _, v in ipairs(getgenv().Services.Workspace:GetDescendants()) do
-        if v:IsA("BasePart") or v:IsA("Decal") or v:IsA("Texture") or v:IsA("MeshPart") then
-            local keep = false
-            if LocalPlayer.Character and v:IsDescendantOf(LocalPlayer.Character) then keep = true
-            else
-                for _, p in ipairs(getgenv().Services.Players:GetPlayers()) do
-                    if p ~= LocalPlayer and p.Character and v:IsDescendantOf(p.Character) then keep = true; break end
-                end
-            end
-            if not keep and eggNamesSet then
-                local current = v
-                while current and current ~= getgenv().Services.Workspace do
-                    if eggNamesSet[current.Name] then keep = true; break end
-                    current = current.Parent
-                end
-            end
-            if not keep then table.insert(partsToDelete, v) end
-        end
-    end
-    for _, obj in ipairs(partsToDelete) do pcall(function() if obj and obj.Parent then obj:Destroy() end end) end
-end
-
-print("Part 2 (Functions) Loaded")
